@@ -1,5 +1,23 @@
-venv/
-.env
+# python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+venv/
+.env
+
+# mac
 .DS_Store
+
+# logs
+*.log
+
+# local runtime
+dlq/
+data/
+.influxdbv2/
+
+# mqtt / local state
+mosquitto/
