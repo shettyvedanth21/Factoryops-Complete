@@ -177,8 +177,9 @@ import signal
 import sys
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
 from pydantic import BaseModel
 
 from config import get_settings
@@ -203,6 +204,14 @@ class HealthResponse(BaseModel):
 class ReadyResponse(BaseModel):
     ready: bool
     checks: dict
+
+
+# -------------------------------
+# NEW – export trigger request
+# -------------------------------
+
+class ExportRequest(BaseModel):
+    device_id: Optional[str] = None
 
 
 @asynccontextmanager
@@ -273,6 +282,49 @@ async def readiness_check() -> ReadyResponse:
         )
 
     return ReadyResponse(ready=True, checks=checks)
+
+
+# -------------------------------------------------
+# NEW – on-demand export trigger
+# -------------------------------------------------
+
+@app.post("/api/v1/exports/run")
+async def run_export(req: ExportRequest = Body(...)):
+    if not _worker or not _worker.is_running():
+        raise HTTPException(
+            status_code=503,
+            detail="Export worker is not running",
+        )
+
+    try:
+        await _worker.force_export(device_id=req.device_id)
+
+        return {
+            "status": "accepted",
+            "device_id": req.device_id,
+        }
+
+    except Exception as e:
+        logger.exception("On-demand export failed")
+        raise HTTPException(
+            status_code=500,
+            detail=str(e),
+        )
+
+
+# -------------------------------------------------
+# NEW – export status
+# -------------------------------------------------
+
+@app.get("/api/v1/exports/status/{device_id}")
+async def get_export_status(device_id: str):
+    if not _worker:
+        raise HTTPException(
+            status_code=503,
+            detail="Export worker is not running",
+        )
+
+    return await _worker.exporter.get_export_status(device_id)
 
 
 async def _check_checkpoint_store() -> bool:

@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -33,10 +33,8 @@ class AnalyticsRequest(BaseModel):
 
     device_id: str
 
-    # NEW
     dataset_key: Optional[str] = None
 
-    # Old mode (still supported)
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
 
@@ -82,6 +80,32 @@ class JobStatusResponse(BaseModel):
     completed_at: Optional[datetime] = None
 
 
+# ---------------------------------------------------------
+# PERMANENT METRICS CONTRACT
+# ---------------------------------------------------------
+
+class AccuracyMetrics(BaseModel):
+    # shared / generic
+    accuracy: Optional[float] = None
+
+    # classification (failure prediction)
+    precision: Optional[float] = None
+    recall: Optional[float] = None
+    f1_score: Optional[float] = None
+
+    # IMPORTANT: can be None when only one class is present
+    auc_roc: Optional[float] = None
+
+    # regression / forecasting
+    mae: Optional[float] = None
+    rmse: Optional[float] = None
+    mape: Optional[float] = None
+
+    # convenience fields used by your pipelines
+    mean_actual: Optional[float] = None
+    mean_predicted: Optional[float] = None
+
+
 class AnalyticsResultsResponse(BaseModel):
     job_id: str
     status: JobStatus
@@ -93,7 +117,10 @@ class AnalyticsResultsResponse(BaseModel):
     date_range_end: Optional[datetime]
 
     results: Dict[str, Any]
-    accuracy_metrics: Optional[Dict[str, float]] = None
+
+    # 👇 this is the real fix
+    accuracy_metrics: Optional[AccuracyMetrics] = None
+
     execution_time_seconds: Optional[int] = None
     completed_at: Optional[datetime] = None
 

@@ -10,19 +10,35 @@ import pandas as pd
 
 class AnalyticsJSONEncoder(json.JSONEncoder):
     """Custom JSON encoder for analytics data."""
-    
+
     def default(self, obj: Any) -> Any:
-        """Convert non-serializable objects."""
+
         if isinstance(obj, np.ndarray):
             return obj.tolist()
-        if isinstance(obj, (np.int64, np.int32)):
+
+        if isinstance(obj, (np.integer,)):
             return int(obj)
-        if isinstance(obj, (np.float64, np.float32)):
-            return float(obj)
+
+        if isinstance(obj, (np.floating,)):
+            val = float(obj)
+            if np.isnan(val) or np.isinf(val):
+                return None
+            return val
+
+        if isinstance(obj, float):
+            if np.isnan(obj) or np.isinf(obj):
+                return None
+            return obj
+
         if isinstance(obj, datetime):
             return obj.isoformat()
+
         if isinstance(obj, pd.Timestamp):
             return obj.isoformat()
+
+        if isinstance(obj, pd.Series):
+            return obj.tolist()
+
         return super().default(obj)
 
 

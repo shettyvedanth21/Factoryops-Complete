@@ -136,12 +136,25 @@ async def get_analytics_results(
         )
 
 
+# ------------------------------------------------------------------
+# ✅ PERMANENT FIX – advertise only runnable models
+# ------------------------------------------------------------------
 @router.get(
     "/models",
     response_model=SupportedModelsResponse,
 )
 async def get_supported_models() -> SupportedModelsResponse:
     """Get list of supported analytics models by type."""
+
+    forecasting_models = ["prophet"]
+
+    # Only expose ARIMA if statsmodels is actually installed
+    try:
+        import statsmodels  # noqa: F401
+        forecasting_models.append("arima")
+    except Exception:
+        pass
+
     return SupportedModelsResponse(
         anomaly_detection=[
             "isolation_forest",
@@ -151,10 +164,7 @@ async def get_supported_models() -> SupportedModelsResponse:
             "random_forest",
             "gradient_boosting",
         ],
-        forecasting=[
-            "prophet",
-            "arima",
-        ],
+        forecasting=forecasting_models,
     )
 
 

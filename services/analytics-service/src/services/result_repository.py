@@ -9,7 +9,7 @@ from src.models.schemas import JobStatus
 
 class ResultRepository(ABC):
     """Abstract interface for analytics result storage."""
-    
+
     @abstractmethod
     async def create_job(
         self,
@@ -21,14 +21,12 @@ class ResultRepository(ABC):
         date_range_end: datetime,
         parameters: Optional[Dict[str, Any]],
     ) -> None:
-        """Create a new job record."""
         pass
-    
+
     @abstractmethod
     async def get_job(self, job_id: str) -> Any:
-        """Get job by ID."""
         pass
-    
+
     @abstractmethod
     async def update_job_status(
         self,
@@ -40,9 +38,8 @@ class ResultRepository(ABC):
         message: Optional[str] = None,
         error_message: Optional[str] = None,
     ) -> None:
-        """Update job status."""
         pass
-    
+
     @abstractmethod
     async def update_job_progress(
         self,
@@ -50,9 +47,8 @@ class ResultRepository(ABC):
         progress: float,
         message: str,
     ) -> None:
-        """Update job progress."""
         pass
-    
+
     @abstractmethod
     async def save_results(
         self,
@@ -61,9 +57,8 @@ class ResultRepository(ABC):
         accuracy_metrics: Optional[Dict[str, float]],
         execution_time_seconds: int,
     ) -> None:
-        """Save analytics results."""
         pass
-    
+
     @abstractmethod
     async def list_jobs(
         self,
@@ -72,5 +67,12 @@ class ResultRepository(ABC):
         limit: int = 20,
         offset: int = 0,
     ) -> List[Any]:
-        """List jobs with filtering."""
+        pass
+
+    # -------------------------------------------------
+    # ✅ REQUIRED for async SQLAlchemy correctness
+    # -------------------------------------------------
+    @abstractmethod
+    async def rollback(self) -> None:
+        """Rollback current transaction."""
         pass

@@ -3,6 +3,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+import math
 import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,11 +18,39 @@ logger = structlog.get_logger()
 
 class PostgresResultRepository(ResultRepository):
     """PostgreSQL implementation of result repository."""
-    
+
     def __init__(self, session: AsyncSession):
         self._session = session
         self._logger = logger.bind(repository="PostgresResultRepository")
-    
+
+    # ------------------------------------------------------------------
+    # Internal – JSON safe sanitizer (PERMANENT boundary protection)
+    # ------------------------------------------------------------------
+
+    def _sanitize_json(self, value: Any) -> Any:
+        """
+        Recursively replace NaN / inf values so that JSONB insert never fails.
+        This is a permanent persistence-layer guarantee.
+        """
+
+        if value is None:
+            return None
+
+        if isinstance(value, float):
+            if math.isnan(value) or math.isinf(value):
+                return None
+            return value
+
+        if isinstance(value, list):
+            return [self._sanitize_json(v) for v in value]
+
+        if isinstance(value, dict):
+            return {k: self._sanitize_json(v) for k, v in value.items()}
+
+        return value
+
+    # ------------------------------------------------------------------
+
     async def create_job(
         self,
         job_id: str,
@@ -32,7 +61,6 @@ class PostgresResultRepository(ResultRepository):
         date_range_end: datetime,
         parameters: Optional[Dict[str, Any]],
     ) -> None:
-        """Create a new job record."""
         job = AnalyticsJob(
             job_id=job_id,
             device_id=device_id,
@@ -40,28 +68,27 @@ class PostgresResultRepository(ResultRepository):
             model_name=model_name,
             date_range_start=date_range_start,
             date_range_end=date_range_end,
-            parameters=parameters,
+            parameters=self._sanitize_json(parameters),
             status=JobStatus.PENDING.value,
             progress=0.0,
         )
-        
+
         self._session.add(job)
         await self._session.commit()
-        
+
         self._logger.info("job_created", job_id=job_id, device_id=device_id)
-    
+
     async def get_job(self, job_id: str) -> AnalyticsJob:
-        """Get job by ID."""
         result = await self._session.execute(
             select(AnalyticsJob).where(AnalyticsJob.job_id == job_id)
         )
         job = result.scalar_one_or_none()
-        
+
         if not job:
             raise JobNotFoundError(f"Job {job_id} not found")
-        
+
         return job
-    
+
     async def update_job_status(
         self,
         job_id: str,
@@ -72,11 +99,11 @@ class PostgresResultRepository(ResultRepository):
         message: Optional[str] = None,
         error_message: Optional[str] = None,
     ) -> None:
-        """Update job status."""
+
         job = await self.get_job(job_id)
-        
+
         job.status = status.value
-        
+
         if started_at:
             job.started_at = started_at
         if completed_at:
@@ -87,30 +114,30 @@ class PostgresResultRepository(ResultRepository):
             job.message = message
         if error_message:
             job.error_message = error_message
-        
+
         await self._session.commit()
-        
+
         self._logger.debug(
             "job_status_updated",
             job_id=job_id,
             status=status.value,
             progress=progress,
         )
-    
+
     async def update_job_progress(
         self,
         job_id: str,
         progress: float,
         message: str,
     ) -> None:
-        """Update job progress."""
+
         job = await self.get_job(job_id)
-        
+
         job.progress = progress
         job.message = message
-        
+
         await self._session.commit()
-    
+
     async def save_results(
         self,
         job_id: str,
@@ -118,21 +145,24 @@ class PostgresResultRepository(ResultRepository):
         accuracy_metrics: Optional[Dict[str, float]],
         execution_time_seconds: int,
     ) -> None:
-        """Save analytics results."""
+
         job = await self.get_job(job_id)
-        
-        job.results = results
-        job.accuracy_metrics = accuracy_metrics
+
+        # -------------------------------
+        # PERMANENT FIX – sanitize JSON
+        # -------------------------------
+        job.results = self._sanitize_json(results)
+        job.accuracy_metrics = self._sanitize_json(accuracy_metrics)
         job.execution_time_seconds = execution_time_seconds
-        
+
         await self._session.commit()
-        
+
         self._logger.info(
             "results_saved",
             job_id=job_id,
             execution_time_seconds=execution_time_seconds,
         )
-    
+
     async def list_jobs(
         self,
         status: Optional[str] = None,
@@ -140,15 +170,22 @@ class PostgresResultRepository(ResultRepository):
         limit: int = 20,
         offset: int = 0,
     ) -> List[AnalyticsJob]:
-        """List jobs with filtering."""
+
         query = select(AnalyticsJob).order_by(AnalyticsJob.created_at.desc())
-        
+
         if status:
             query = query.where(AnalyticsJob.status == status)
         if device_id:
             query = query.where(AnalyticsJob.device_id == device_id)
-        
+
         query = query.limit(limit).offset(offset)
-        
+
         result = await self._session.execute(query)
         return list(result.scalars().all())
+
+    # ------------------------------------------------------------------
+    # REQUIRED by ResultRepository (transaction safety)
+    # ------------------------------------------------------------------
+
+    async def rollback(self) -> None:
+        await self._session.rollback()
