@@ -11,6 +11,16 @@ const nextConfig: NextConfig = {
         source: "/backend/data/:path*",
         destination: "http://localhost:8081/:path*",
       },
+      {
+        source: "/backend/rule-engine/:path*",
+        destination: "http://localhost:8002/:path*",
+      },
+
+      // ✅ analytics-service proxy
+      {
+        source: "/backend/analytics/:path*",
+        destination: "http://localhost:8003/:path*",
+      },
     ];
   },
 };

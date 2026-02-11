@@ -9,6 +9,12 @@ interface DeviceLayoutProps {
   children: React.ReactNode;
 }
 
+type Tab = {
+  name: string;
+  href?: string;
+  disabled?: boolean;
+};
+
 export default function DeviceLayout({ children }: DeviceLayoutProps) {
   const params = useParams();
   const pathname = usePathname();
@@ -18,6 +24,8 @@ export default function DeviceLayout({ children }: DeviceLayoutProps) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!deviceId) return;
+
     const fetchDevice = async () => {
       setLoading(true);
       setError(null);
@@ -25,7 +33,9 @@ export default function DeviceLayout({ children }: DeviceLayoutProps) {
         const data = await getDeviceById(deviceId);
         setDevice(data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to fetch device details");
+        setError(
+          err instanceof Error ? err.message : "Failed to fetch device details"
+        );
       } finally {
         setLoading(false);
       }
@@ -34,13 +44,17 @@ export default function DeviceLayout({ children }: DeviceLayoutProps) {
     fetchDevice();
   }, [deviceId]);
 
-  const tabs = [
+  const tabs: Tab[] = [
     { name: "Telemetry", href: `/devices/${deviceId}/telemetry` },
     { name: "Stats", href: `/devices/${deviceId}/stats` },
     { name: "Charts", href: `/devices/${deviceId}/charts` },
+    { name: "Alerts", href: `/devices/${deviceId}/alerts` },
   ];
 
-  const isActiveTab = (href: string) => pathname === href;
+  const isActiveTab = (href?: string) => {
+    if (!href) return false;
+    return pathname === href;
+  };
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
@@ -52,8 +66,10 @@ export default function DeviceLayout({ children }: DeviceLayoutProps) {
               <div>
                 {loading ? (
                   <div className="flex items-center space-x-2">
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-zinc-900 dark:border-zinc-50"></div>
-                    <span className="text-zinc-600 dark:text-zinc-400">Loading device details...</span>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-zinc-900 dark:border-zinc-50" />
+                    <span className="text-zinc-600 dark:text-zinc-400">
+                      Loading device details...
+                    </span>
                   </div>
                 ) : error ? (
                   <div>
@@ -82,6 +98,7 @@ export default function DeviceLayout({ children }: DeviceLayoutProps) {
                         {device.status}
                       </span>
                     </div>
+
                     <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-zinc-600 dark:text-zinc-400">
                       <span>
                         <span className="font-medium">ID:</span> {device.id}
@@ -92,7 +109,8 @@ export default function DeviceLayout({ children }: DeviceLayoutProps) {
                       </span>
                       {device.location && (
                         <span>
-                          <span className="font-medium">Location:</span> {device.location}
+                          <span className="font-medium">Location:</span>{" "}
+                          {device.location}
                         </span>
                       )}
                     </div>
@@ -103,6 +121,7 @@ export default function DeviceLayout({ children }: DeviceLayoutProps) {
                   </h1>
                 )}
               </div>
+
               <Link
                 href="/devices"
                 className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
@@ -115,11 +134,24 @@ export default function DeviceLayout({ children }: DeviceLayoutProps) {
           {/* Navigation Tabs */}
           <nav className="-mb-px flex space-x-8" aria-label="Tabs">
             {tabs.map((tab) => {
+              if (tab.disabled) {
+                return (
+                  <span
+                    key={tab.name}
+                    className="whitespace-nowrap py-4 px-1 border-b-2 border-transparent text-zinc-400 cursor-not-allowed text-sm font-medium"
+                  >
+                    {tab.name}
+                    <span className="ml-2 text-xs">(soon)</span>
+                  </span>
+                );
+              }
+
               const isActive = isActiveTab(tab.href);
+
               return (
                 <Link
                   key={tab.name}
-                  href={tab.href}
+                  href={tab.href!}
                   className={`
                     whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm
                     ${

@@ -4,7 +4,7 @@ from typing import List, Optional
 from uuid import uuid4
 
 import structlog
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Query
 
 from src.api.dependencies import get_job_queue, get_result_repository
 from src.models.schemas import (
@@ -19,6 +19,10 @@ from src.models.schemas import (
 from src.services.result_repository import ResultRepository
 from src.utils.exceptions import JobNotFoundError
 from src.workers.job_queue import JobQueue
+
+# ✅ NEW imports for dataset listing
+from src.infrastructure.s3_client import S3Client
+from src.services.dataset_service import DatasetService
 
 logger = structlog.get_logger()
 
@@ -37,12 +41,12 @@ async def run_analytics(
 ) -> AnalyticsJobResponse:
     """
     Submit a new analytics job.
-    
+
     The job will be queued and processed asynchronously.
     Use the returned job_id to check status and retrieve results.
     """
     job_id = str(uuid4())
-    
+
     logger.info(
         "analytics_job_submitted",
         job_id=job_id,
@@ -50,12 +54,12 @@ async def run_analytics(
         model_name=request.model_name,
         device_id=request.device_id,
     )
-    
+
     await job_queue.submit_job(
         job_id=job_id,
         request=request,
     )
-    
+
     return AnalyticsJobResponse(
         job_id=job_id,
         status=JobStatus.PENDING,
@@ -100,18 +104,18 @@ async def get_analytics_results(
 ) -> AnalyticsResultsResponse:
     """
     Retrieve results of a completed analytics job.
-    
+
     Returns model outputs, accuracy metrics, and execution details.
     """
     try:
         job = await result_repo.get_job(job_id)
-        
+
         if job.status != JobStatus.COMPLETED.value:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Job {job_id} is not completed (current status: {job.status})",
             )
-        
+
         return AnalyticsResultsResponse(
             job_id=job_id,
             status=JobStatus(job.status),
@@ -172,7 +176,7 @@ async def list_jobs(
         limit=limit,
         offset=offset,
     )
-    
+
     return [
         JobStatusResponse(
             job_id=job.job_id,
@@ -185,3 +189,30 @@ async def list_jobs(
         )
         for job in jobs
     ]
+
+
+# ------------------------------------------------------------------
+# ✅ STEP-1 – Dataset listing endpoint
+# ------------------------------------------------------------------
+
+@router.get("/datasets")
+async def list_datasets(
+    device_id: str = Query(..., description="Device ID"),
+):
+    """
+    List available exported datasets for a device.
+
+    This reads directly from S3/MinIO and returns available dataset objects.
+    """
+
+    s3_client = S3Client()
+    dataset_service = DatasetService(s3_client)
+
+    datasets = await dataset_service.list_available_datasets(
+        device_id=device_id
+    )
+
+    return {
+        "device_id": device_id,
+        "datasets": datasets,
+    }

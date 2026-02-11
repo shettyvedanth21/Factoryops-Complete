@@ -1,7 +1,7 @@
 """API endpoints for rule management."""
 
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -19,8 +19,10 @@ from app.schemas.rule import (
     RuleDeleteResponse,
     ErrorResponse,
     RuleStatus,
+    TelemetryPayload,   # ✅ CHANGED (was TelemetryIn)
 )
 from app.services.rule import RuleService
+from app.services.evaluator import RuleEvaluator
 import logging
 
 logger = logging.getLogger(__name__)
@@ -81,14 +83,7 @@ async def list_rules(
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     db: AsyncSession = Depends(get_db),
 ) -> RuleListResponse:
-    """List all rules with optional filtering and pagination.
-    
-    - **tenant_id**: Optional tenant ID for multi-tenant filtering
-    - **status**: Filter by status ('active', 'paused', 'archived')
-    - **device_id**: Filter rules applicable to specific device
-    - **page**: Page number (1-based)
-    - **page_size**: Number of items per page (max 100)
-    """
+    """List all rules with optional filtering and pagination."""
     service = RuleService(db)
     rules, total = await service.list_rules(
         tenant_id=tenant_id,
@@ -122,18 +117,7 @@ async def create_rule(
     rule_data: RuleCreate,
     db: AsyncSession = Depends(get_db),
 ) -> RuleSingleResponse:
-    """Create a new rule.
-    
-    - **rule_name**: Human-readable name (required)
-    - **description**: Rule description (optional)
-    - **scope**: 'all_devices' or 'selected_devices' (required)
-    - **device_ids**: List of device IDs (required if scope is 'selected_devices')
-    - **property**: Property to monitor: 'temperature', 'voltage', 'current', 'power'
-    - **condition**: Comparison operator: '>', '<', '=', '!=', '>=', '<='
-    - **threshold**: Threshold value for comparison
-    - **notification_channels**: List of channels: 'email', 'whatsapp', 'telegram'
-    - **cooldown_minutes**: Minutes between notifications (default: 15)
-    """
+    """Create a new rule."""
     service = RuleService(db)
     
     try:
@@ -175,21 +159,7 @@ async def update_rule(
     tenant_id: Optional[str] = Query(None, description="Tenant ID for multi-tenancy"),
     db: AsyncSession = Depends(get_db),
 ) -> RuleSingleResponse:
-    """Update an existing rule.
-    
-    Only provided fields will be updated. All fields are optional.
-    
-    - **rule_id**: Rule identifier in path
-    - **rule_name**: Updated name (optional)
-    - **description**: Updated description (optional)
-    - **scope**: Updated scope (optional)
-    - **device_ids**: Updated device list (optional)
-    - **property**: Updated property (optional)
-    - **condition**: Updated condition (optional)
-    - **threshold**: Updated threshold (optional)
-    - **notification_channels**: Updated channels (optional)
-    - **cooldown_minutes**: Updated cooldown (optional)
-    """
+    """Update an existing rule."""
     service = RuleService(db)
     
     try:
@@ -238,11 +208,7 @@ async def update_rule_status(
     tenant_id: Optional[str] = Query(None, description="Tenant ID for multi-tenancy"),
     db: AsyncSession = Depends(get_db),
 ) -> RuleStatusResponse:
-    """Update rule status (pause/resume/archive).
-    
-    - **rule_id**: Rule identifier
-    - **status**: New status ('active', 'paused', 'archived')
-    """
+    """Update rule status."""
     service = RuleService(db)
     rule = await service.update_rule_status(rule_id, status_update.status, tenant_id)
     
@@ -286,12 +252,7 @@ async def delete_rule(
     soft: bool = Query(True, description="Perform soft delete"),
     db: AsyncSession = Depends(get_db),
 ) -> RuleDeleteResponse:
-    """Delete a rule.
-    
-    - **rule_id**: Rule identifier
-    - **tenant_id**: Optional tenant ID
-    - **soft**: If True, marks rule as deleted; if False, permanently removes
-    """
+    """Delete a rule."""
     service = RuleService(db)
     deleted = await service.delete_rule(rule_id, tenant_id, soft=soft)
     
@@ -314,58 +275,85 @@ async def delete_rule(
     )
 
 
-from pydantic import BaseModel
-from fastapi import Body
-
-
-class RuleEvaluationRequest(BaseModel):
-    device_id: str
-    timestamp: str
-    voltage: float
-    current: float
-    power: float
-    temperature: float
-    schema_version: str
-    enrichment_status: str
-    device_type: Optional[str] = None
-    device_location: Optional[str] = None
-
-
-class RuleEvaluationResponse(BaseModel):
-    success: bool
-    message: str
-
+# ----------------------------------------------------------------------
+# ✅ FIXED evaluate endpoint (streaming / data-service entrypoint)
+# ----------------------------------------------------------------------
 
 @router.post(
     "/evaluate",
-    response_model=RuleEvaluationResponse,
     status_code=200,
+    responses={
+        400: {"model": ErrorResponse, "description": "Validation error"},
+        500: {"model": ErrorResponse, "description": "Internal server error"},
+    },
 )
 async def evaluate_rules(
-    payload: RuleEvaluationRequest,
+    payload: TelemetryPayload,
+    db: AsyncSession = Depends(get_db),
 ):
     """
-    Evaluate telemetry against rules.
+    Evaluate full telemetry payload against active rules.
 
-    NOTE:
-    For now this is a safe stub implementation.
-    Real rule evaluation logic can be added later.
+    This endpoint is used by the data-service and expects a complete
+    telemetry payload (voltage, current, power, temperature, etc).
     """
+    evaluator = RuleEvaluator(db)
 
-    logger.info(
-        "Rule evaluation request received",
-        extra={
-            "device_id": payload.device_id,
-            "property_values": {
-                "voltage": payload.voltage,
-                "current": payload.current,
-                "power": payload.power,
-                "temperature": payload.temperature,
+    try:
+        total, triggered, results = await evaluator.evaluate_telemetry(payload)
+
+        logger.info(
+            "Rule evaluation completed",
+            extra={
+                "device_id": payload.device_id,
+                "rules_evaluated": total,
+                "rules_triggered": triggered,
             },
-        },
-    )
+        )
 
-    return RuleEvaluationResponse(
-        success=True,
-        message="Rule evaluation completed (stub)",
-    )
+        return {
+            "rules_evaluated": total,
+            "rules_triggered": triggered,
+            "results": results,
+        }
+
+    except ValueError as e:
+        logger.warning(
+            "Evaluation failed",
+            extra={
+                "device_id": payload.device_id,
+                "error": str(e),
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "EVALUATION_ERROR",
+                    "message": str(e),
+                },
+                "timestamp": datetime.utcnow().isoformat(),
+            },
+        )
+
+    except Exception as e:
+        logger.error(
+            "Unexpected error during rule evaluation",
+            extra={
+                "device_id": payload.device_id,
+                "error": str(e),
+            },
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred during evaluation",
+                },
+                "timestamp": datetime.utcnow().isoformat(),
+            },
+        )

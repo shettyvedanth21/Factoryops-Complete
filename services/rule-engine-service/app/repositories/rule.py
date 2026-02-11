@@ -2,7 +2,7 @@
 
 from typing import Optional, List
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -139,7 +139,8 @@ class RuleRepository:
         """Update the last_triggered_at timestamp for a rule."""
         rule = await self.get_by_id(rule_id)
         if rule:
-            rule.last_triggered_at = datetime.utcnow()
+            # IMPORTANT: store timezone-aware timestamp
+            rule.last_triggered_at = datetime.now(timezone.utc)
             await self._session.flush()
     
     async def update_status(self, rule_id: UUID, status: RuleStatus) -> Optional[Rule]:
@@ -147,7 +148,7 @@ class RuleRepository:
         rule = await self.get_by_id(rule_id)
         if rule:
             rule.status = status
-            rule.updated_at = datetime.utcnow()
+            rule.updated_at = datetime.now(timezone.utc)
             await self._session.flush()
             await self._session.refresh(rule)
         return rule
@@ -155,7 +156,7 @@ class RuleRepository:
     async def delete(self, rule: Rule, soft: bool = True) -> None:
         """Delete a rule (soft or hard delete)."""
         if soft:
-            rule.deleted_at = datetime.utcnow()
+            rule.deleted_at = datetime.now(timezone.utc)
             rule.status = RuleStatus.ARCHIVED
             await self._session.flush()
         else:
@@ -255,3 +256,49 @@ class AlertRepository:
         
         result = await self._session.execute(query)
         return list(result.scalars().all()), total
+
+    # ------------------------------------------------------------------
+    # NEW – permanent, non-breaking extensions
+    # ------------------------------------------------------------------
+
+    async def acknowledge_alert(
+        self,
+        alert_id: UUID,
+        acknowledged_by: Optional[str] = None,
+    ) -> Optional[Alert]:
+        """
+        Mark an alert as acknowledged.
+        """
+        alert = await self.get_by_id(alert_id)
+
+        if not alert:
+            return None
+
+        alert.status = "acknowledged"
+        alert.acknowledged_by = acknowledged_by
+        alert.acknowledged_at = datetime.now(timezone.utc)
+
+        await self._session.flush()
+        await self._session.refresh(alert)
+
+        return alert
+
+    async def resolve_alert(
+        self,
+        alert_id: UUID,
+    ) -> Optional[Alert]:
+        """
+        Mark an alert as resolved.
+        """
+        alert = await self.get_by_id(alert_id)
+
+        if not alert:
+            return None
+
+        alert.status = "resolved"
+        alert.resolved_at = datetime.now(timezone.utc)
+
+        await self._session.flush()
+        await self._session.refresh(alert)
+
+        return alert
