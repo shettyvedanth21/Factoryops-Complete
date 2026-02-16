@@ -1,0 +1,38 @@
+company:
+  name: CITAGENT
+
+paths:
+  db_path: data/factory.db
+  parquet_path: data/telemetry.parquet
+  log_path: logs/factoryops.log
+
+simulation:
+  start_date: "2025-01-01"
+  days: 365
+  machines: ["M1", "M2", "M3"]
+  tariff_inr_per_kwh: 8.0
+  seed: 42
+
+storage:
+  sqlite_table_hourly: telemetry_h
+  sqlite_table_daily: telemetry_d
+  sqlite_table_weekly: telemetry_w
+  sqlite_table_monthly: telemetry_m
+  sqlite_table_yearly: telemetry_y
+
+intelligence:
+  anomaly:
+    rolling_window_hours: 168
+    zscore_threshold: 3.0
+    pressure_min_bar: 5.5
+    pressure_max_bar: 9.0
+  forecast:
+    alpha: 0.3
+
+agent:
+  model: llama3:8b
+  ollama_base_url: http://127.0.0.1:11434
+  memory_turns: 10
+
+dashboard:
+  title: "CITAGENT FactoryOps AI Copilot"
