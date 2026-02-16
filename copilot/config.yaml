@@ -30,7 +30,7 @@ intelligence:
     alpha: 0.3
 
 agent:
-  model: llama3:instruct
+  model: phi3
   ollama_base_url: http://ollama:11434
   memory_turns: 10
 
