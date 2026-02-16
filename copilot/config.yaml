@@ -30,9 +30,9 @@ intelligence:
     alpha: 0.3
 
 agent:
-  model: llama3:8b
-  ollama_base_url: http://127.0.0.1:11434
+  model: llama3:instruct
+  ollama_base_url: http://ollama:11434
   memory_turns: 10
 
 dashboard:
-  title: "CITAGENT FactoryOps AI Copilot"
+  title: "CITTAGENT FactoryOps AI Copilot"
