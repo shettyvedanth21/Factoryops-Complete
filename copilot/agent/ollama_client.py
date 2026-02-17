@@ -20,8 +20,10 @@ class OllamaClient:
             )
             if resp.status_code != 200:
                 return False
+
             tags = resp.json().get("models", [])
             return any(self.model in m.get("name", "") for m in tags)
+
         except Exception as exc:
             LOGGER.warning("Ollama health check failed: %s", exc)
             return False
@@ -32,7 +34,12 @@ class OllamaClient:
             "prompt": prompt,
             "stream": False,
             "options": {
+                # 🔥 DEMO OPTIMIZED SETTINGS
                 "temperature": 0.2,
+                "num_predict": 150,     # limit response length (VERY IMPORTANT)
+                "top_k": 20,
+                "top_p": 0.8,
+                "repeat_penalty": 1.1,
             },
         }
 
@@ -43,11 +50,23 @@ class OllamaClient:
                 timeout=self.timeout_seconds,
             )
             resp.raise_for_status()
+
             body = resp.json()
-            return body.get("response", "")
+            response = body.get("response", "").strip()
+
+            if not response:
+                return "⚠️ AI returned an empty response."
+
+            return response
+
         except requests.exceptions.Timeout:
             LOGGER.error("Ollama request timed out")
-            return "⚠️ AI model took too long to respond. Please try again."
+            return "⚠️ AI response timed out. Please try again."
+
+        except requests.exceptions.ConnectionError:
+            LOGGER.error("Ollama connection error")
+            return "⚠️ Unable to connect to AI model service."
+
         except Exception as e:
             LOGGER.error("Ollama generation failed: %s", e)
-            return "⚠️ Unable to get response from AI model."
+            return "⚠️ AI encountered an unexpected error."
