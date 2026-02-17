@@ -30,9 +30,9 @@ intelligence:
     alpha: 0.3
 
 agent:
-  model: phi3
+  model: phi3:mini
   ollama_base_url: http://ollama:11434
-  memory_turns: 10
+  memory_turns: 5
 
 dashboard:
   title: "CITTAGENT FactoryOps AI Copilot"
