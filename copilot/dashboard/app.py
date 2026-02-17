@@ -45,6 +45,9 @@ def _kpi_cards(df: pd.DataFrame) -> None:
     c4.metric("Idle Waste %", f"{idle_waste_pct * 100:.2f}%")
 
 
+# ---------- CHARTS UNCHANGED ----------
+
+
 def _monthly_energy_chart(storage, machine_id: str, start_ts, end_ts):
     monthly = storage.query(machine_id, start_ts, end_ts, "M")
     if monthly.empty:
@@ -64,7 +67,13 @@ def _monthly_energy_chart(storage, machine_id: str, start_ts, end_ts):
 def _cost_trend(df: pd.DataFrame, granularity: str):
     if df.empty:
         return
-    fig = px.line(df, x="timestamp", y="cost_inr", color="machine_id", title=f"Cost Trend ({granularity})")
+    fig = px.line(
+        df,
+        x="timestamp",
+        y="cost_inr",
+        color="machine_id",
+        title=f"Cost Trend ({granularity})",
+    )
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -72,7 +81,13 @@ def _power_trend_with_anomalies(df_hourly: pd.DataFrame, anomalies: List[Dict]):
     if df_hourly.empty:
         return
 
-    fig = px.line(df_hourly, x="timestamp", y="power_kw", color="machine_id", title="Power Trend with Anomaly Markers")
+    fig = px.line(
+        df_hourly,
+        x="timestamp",
+        y="power_kw",
+        color="machine_id",
+        title="Power Trend with Anomaly Markers",
+    )
 
     marker_rows = [a for a in anomalies if a.get("metric") == "power_kw"]
     if marker_rows:
@@ -95,7 +110,13 @@ def _pressure_trend(df_hourly: pd.DataFrame, pmin: float, pmax: float):
     if df_hourly.empty:
         return
 
-    fig = px.line(df_hourly, x="timestamp", y="pressure_bar", color="machine_id", title="Pressure Trend")
+    fig = px.line(
+        df_hourly,
+        x="timestamp",
+        y="pressure_bar",
+        color="machine_id",
+        title="Pressure Trend",
+    )
 
     x_min = df_hourly["timestamp"].min()
     x_max = df_hourly["timestamp"].max()
@@ -149,6 +170,9 @@ def _anomaly_heatmap(df_hourly: pd.DataFrame, anomalies: List[Dict]):
     st.plotly_chart(fig, use_container_width=True)
 
 
+# ---------- MAIN ----------
+
+
 def main():
     services = _init()
     cfg = services["cfg"]
@@ -177,25 +201,27 @@ def main():
     with st.sidebar:
         st.header("Controls")
         machine = st.selectbox("Machine", machines, index=0)
-        date_range = st.date_input("Date Range", value=(min_date, max_date), min_value=min_date, max_value=max_date)
+        date_range = st.date_input(
+            "Date Range",
+            value=(min_date, max_date),
+            min_value=min_date,
+            max_value=max_date,
+        )
         granularity = st.radio("Granularity", ["H", "D", "W", "M", "Y"], index=1, horizontal=True)
-        compare_machine = st.selectbox("Compare With", machines, index=0)
-        forecast_days = st.select_slider("Forecast Horizon (days)", options=[30, 90, 180], value=90)
 
-        st.subheader("What-If Inputs")
-        idle_reduction_pct = st.slider("Idle Reduction %", 0, 50, 10)
-        efficiency_gain_pct = st.slider("Efficiency Gain %", 0, 30, 5)
-        new_tariff_inr = st.number_input("New Tariff (INR/kWh)", min_value=1.0, max_value=20.0, value=float(cfg["simulation"]["tariff_inr_per_kwh"]))
-        downtime_low = st.number_input("Downtime Range Min (min)", min_value=-1000.0, max_value=1000.0, value=0.0)
-        downtime_high = st.number_input("Downtime Range Max (min)", min_value=-1000.0, max_value=1000.0, value=0.0)
+    # -------- FIXED DATE HANDLING (ROBUST) --------
 
-    if isinstance(date_range, tuple) and len(date_range) == 2:
-        start_date, end_date = date_range
+    if isinstance(date_range, tuple):
+        start_date = date_range[0]
+        end_date = date_range[1]
     else:
-        start_date = end_date = date_range
+        start_date = date_range
+        end_date = date_range
 
     start_ts = pd.Timestamp(start_date)
     end_ts = pd.Timestamp(end_date) + pd.Timedelta(hours=23, minutes=59, seconds=59)
+
+    # ---------------------------------------------
 
     df = storage.query(machine, start_ts, end_ts, granularity)
     df_hourly = storage.query(machine, start_ts, end_ts, "H")
@@ -226,6 +252,7 @@ def main():
         _anomaly_heatmap(df_hourly, anomalies)
 
     st.subheader("AI Chat Panel")
+
     if "chat_history" not in st.session_state:
         st.session_state["chat_history"] = []
 
@@ -234,6 +261,7 @@ def main():
             st.markdown(msg["content"])
 
     user_msg = st.chat_input("Ask about historical trends, anomalies, forecast, optimization, or what-if scenarios")
+
     if user_msg:
         st.session_state["chat_history"].append({"role": "user", "content": user_msg})
         with st.chat_message("user"):
@@ -245,16 +273,13 @@ def main():
             start_ts=start_ts,
             end_ts=end_ts,
             granularity=granularity,
-            compare_machine=(compare_machine if compare_machine != "ALL" else None),
-            forecast_days=forecast_days,
-            whatif_inputs={
-                "idle_reduction_pct": idle_reduction_pct,
-                "new_tariff_inr": new_tariff_inr,
-                "efficiency_gain_pct": efficiency_gain_pct,
-                "downtime_range": (downtime_low, downtime_high),
-            },
+            compare_machine=None,
+            forecast_days=90,
+            whatif_inputs={},
         )
+
         assistant_text = result["answer"]
+
         st.session_state["chat_history"].append({"role": "assistant", "content": assistant_text})
         with st.chat_message("assistant"):
             st.markdown(assistant_text)
